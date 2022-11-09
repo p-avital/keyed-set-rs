@@ -108,6 +108,17 @@ where
                 extractor: &self.extractor,
             })
     }
+    pub fn get_mut_unguarded<'a, K>(&'a mut self, key: &K) -> Option<&'a mut T>
+    where
+        K: std::hash::Hash,
+        for<'z> <Extractor as KeyExtractor<'z, T>>::Key: std::hash::Hash + PartialEq<K>,
+    {
+        let mut hasher = self.hash_builder.build_hasher();
+        key.hash(&mut hasher);
+        let hash = hasher.finish();
+        self.inner
+            .get_mut(hash, |i| self.extractor.extract(i).eq(key))
+    }
 }
 impl<T, Extractor, S> KeyedSet<T, Extractor, S> {
     pub fn iter(&self) -> Iter<T> {
