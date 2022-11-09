@@ -100,7 +100,7 @@ where
             }
         }
     }
-    pub fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, S, K>
+    pub fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, K, S>
     where
         K: std::hash::Hash,
         for<'z> <Extractor as KeyExtractor<'z, T>>::Key: std::hash::Hash + PartialEq<K>,
@@ -177,7 +177,7 @@ where
     for<'a> <Extractor as KeyExtractor<'a, T>>::Key: std::hash::Hash,
     S: BuildHasher,
 {
-    fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, S, K>
+    fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, K, S>
     where
         Borrower: IBorrower<K>,
         <Borrower as IBorrower<K>>::Borrowed: std::hash::Hash,
@@ -190,7 +190,7 @@ where
     for<'a> <Extractor as KeyExtractor<'a, T>>::Key: std::hash::Hash,
     S: BuildHasher,
 {
-    fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, S, K>
+    fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, K, S>
     where
         Borrower: IBorrower<K>,
         <Borrower as IBorrower<K>>::Borrowed: std::hash::Hash,
@@ -322,16 +322,16 @@ impl<'a, T: 'a> ExactSizeIterator for IterMut<'a, T> {
     }
 }
 
-pub struct VacantEntry<'a, T: 'a, Extractor, S, K> {
+pub struct VacantEntry<'a, T: 'a, Extractor, K, S> {
     pub set: &'a mut KeyedSet<T, Extractor, S>,
     pub key: K,
 }
-pub enum Entry<'a, T, Extractor, S, K> {
-    Vacant(VacantEntry<'a, T, Extractor, S, K>),
+pub enum Entry<'a, T, Extractor, K, S = DefaultHashBuilder> {
+    Vacant(VacantEntry<'a, T, Extractor, K, S>),
     OccupiedEntry(&'a mut T),
 }
 
-impl<'a, T: 'a, Extractor, S, K> Entry<'a, T, Extractor, S, K>
+impl<'a, T: 'a, Extractor, S, K> Entry<'a, T, Extractor, K, S>
 where
     S: BuildHasher,
     for<'z> Extractor: KeyExtractor<'z, T>,
@@ -351,7 +351,7 @@ where
         self.get_or_insert_with(|k| k.into())
     }
 }
-impl<'a, K, T, Extractor, S> VacantEntry<'a, T, Extractor, S, K>
+impl<'a, K, T, Extractor, S> VacantEntry<'a, T, Extractor, K, S>
 where
     S: BuildHasher,
     for<'z> Extractor: KeyExtractor<'z, T>,
