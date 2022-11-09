@@ -3,13 +3,31 @@ use core::{
     marker::PhantomData,
 };
 
-use hashbrown::{hash_map::DefaultHashBuilder, raw::RawIter};
+use hashbrown::{
+    hash_map::DefaultHashBuilder,
+    raw::{RawIntoIter, RawIter},
+};
 
 #[derive(Clone, Default)]
 pub struct KeyedSet<T, Extractor, S = DefaultHashBuilder> {
     inner: hashbrown::raw::RawTable<T>,
     hash_builder: S,
     extractor: Extractor,
+}
+
+impl<'a, T, Extractor, S> IntoIterator for &'a KeyedSet<T, Extractor, S> {
+    type Item = &'a T;
+    type IntoIter = Iter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+impl<'a, T, Extractor, S> IntoIterator for &'a mut KeyedSet<T, Extractor, S> {
+    type Item = &'a mut T;
+    type IntoIter = IterMut<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
 }
 pub trait KeyExtractor<'a, T> {
     type Key: Hash;
@@ -82,6 +100,39 @@ where
             }
         }
     }
+    pub fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, S, K>
+    where
+        K: std::hash::Hash,
+        for<'z> <Extractor as KeyExtractor<'z, T>>::Key: std::hash::Hash + PartialEq<K>,
+    {
+        <Self as IEntry<T, Extractor, S, DefaultBorrower>>::entry(self, key)
+    }
+    pub fn write(&mut self, value: T) -> &mut T
+    where
+        for<'a, 'b> <Extractor as KeyExtractor<'a, T>>::Key:
+            PartialEq<<Extractor as KeyExtractor<'b, T>>::Key>,
+    {
+        let key = self.extractor.extract(&value);
+        let mut hasher = self.hash_builder.build_hasher();
+        key.hash(&mut hasher);
+        let hash = hasher.finish();
+        match self
+            .inner
+            .get_mut(hash, |i| self.extractor.extract(i).eq(&key))
+        {
+            Some(bucket) => {
+                core::mem::drop(key);
+                *bucket = value;
+                unsafe { std::mem::transmute(bucket) }
+            }
+            None => {
+                core::mem::drop(key);
+                let hasher = make_hasher(&self.hash_builder, &self.extractor);
+                let bucket = self.inner.insert(hash, value, hasher);
+                unsafe { &mut *bucket.as_ptr() }
+            }
+        }
+    }
     pub fn get<K>(&self, key: &K) -> Option<&T>
     where
         K: std::hash::Hash,
@@ -118,6 +169,50 @@ where
         let hash = hasher.finish();
         self.inner
             .get_mut(hash, |i| self.extractor.extract(i).eq(key))
+    }
+}
+pub trait IEntry<T, Extractor, S, Borrower = DefaultBorrower>
+where
+    Extractor: for<'a> KeyExtractor<'a, T>,
+    for<'a> <Extractor as KeyExtractor<'a, T>>::Key: std::hash::Hash,
+    S: BuildHasher,
+{
+    fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, S, K>
+    where
+        Borrower: IBorrower<K>,
+        <Borrower as IBorrower<K>>::Borrowed: std::hash::Hash,
+        for<'z> <Extractor as KeyExtractor<'z, T>>::Key:
+            std::hash::Hash + PartialEq<<Borrower as IBorrower<K>>::Borrowed>;
+}
+impl<T, Extractor, S, Borrower> IEntry<T, Extractor, S, Borrower> for KeyedSet<T, Extractor, S>
+where
+    Extractor: for<'a> KeyExtractor<'a, T>,
+    for<'a> <Extractor as KeyExtractor<'a, T>>::Key: std::hash::Hash,
+    S: BuildHasher,
+{
+    fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, S, K>
+    where
+        Borrower: IBorrower<K>,
+        <Borrower as IBorrower<K>>::Borrowed: std::hash::Hash,
+        for<'z> <Extractor as KeyExtractor<'z, T>>::Key:
+            std::hash::Hash + PartialEq<<Borrower as IBorrower<K>>::Borrowed>,
+    {
+        match self.get_mut_unguarded(Borrower::borrow(&key)) {
+            Some(entry) => Entry::OccupiedEntry(unsafe { std::mem::transmute(entry) }),
+            None => Entry::Vacant(VacantEntry { set: self, key }),
+        }
+    }
+}
+pub struct DefaultBorrower;
+pub trait IBorrower<T> {
+    type Borrowed;
+    fn borrow(value: &T) -> &Self::Borrowed;
+}
+impl<T> IBorrower<T> for DefaultBorrower {
+    type Borrowed = T;
+
+    fn borrow(value: &T) -> &Self::Borrowed {
+        value
     }
 }
 impl<T, Extractor, S> KeyedSet<T, Extractor, S> {
@@ -182,6 +277,20 @@ where
     }
 }
 
+pub struct IntoIter<T>(RawIntoIter<T>);
+
+impl<T> ExactSizeIterator for IntoIter<T> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+impl<T> Iterator for IntoIter<T> {
+    type Item = T;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+}
+
 pub struct Iter<'a, T> {
     inner: RawIter<T>,
     marker: PhantomData<&'a ()>,
@@ -213,6 +322,47 @@ impl<'a, T: 'a> ExactSizeIterator for IterMut<'a, T> {
     }
 }
 
+pub struct VacantEntry<'a, T: 'a, Extractor, S, K> {
+    pub set: &'a mut KeyedSet<T, Extractor, S>,
+    pub key: K,
+}
+pub enum Entry<'a, T, Extractor, S, K> {
+    Vacant(VacantEntry<'a, T, Extractor, S, K>),
+    OccupiedEntry(&'a mut T),
+}
+
+impl<'a, T: 'a, Extractor, S, K> Entry<'a, T, Extractor, S, K>
+where
+    S: BuildHasher,
+    for<'z> Extractor: KeyExtractor<'z, T>,
+    for<'z, 'b> <Extractor as KeyExtractor<'z, T>>::Key:
+        PartialEq<<Extractor as KeyExtractor<'b, T>>::Key>,
+{
+    pub fn get_or_insert_with(self, f: impl FnOnce(K) -> T) -> &'a mut T {
+        match self {
+            Entry::Vacant(entry) => entry.insert_with(f),
+            Entry::OccupiedEntry(entry) => entry,
+        }
+    }
+    pub fn get_or_insert_with_into(self) -> &'a mut T
+    where
+        K: Into<T>,
+    {
+        self.get_or_insert_with(|k| k.into())
+    }
+}
+impl<'a, K, T, Extractor, S> VacantEntry<'a, T, Extractor, S, K>
+where
+    S: BuildHasher,
+    for<'z> Extractor: KeyExtractor<'z, T>,
+    for<'z, 'b> <Extractor as KeyExtractor<'z, T>>::Key:
+        PartialEq<<Extractor as KeyExtractor<'b, T>>::Key>,
+{
+    pub fn insert_with<F: FnOnce(K) -> T>(self, f: F) -> &'a mut T {
+        self.set.write(f(self.key))
+    }
+}
+
 fn make_hasher<'a, S: BuildHasher, Extractor, T>(
     hash_builder: &'a S,
     extractor: &'a Extractor,
@@ -235,8 +385,9 @@ fn test() {
     assert_eq!(set.len(), 0);
     set.insert((0, 0));
     assert_eq!(set.insert((0, 1)), Some((0, 0)));
-    dbg!(&set);
     assert_eq!(set.len(), 1);
     assert_eq!(set.get(&0), Some(&(0, 1)));
     assert!(set.get(&1).is_none());
+    assert_eq!(*set.entry(12).get_or_insert_with(|k| (k, k)), (12, 12));
+    dbg!(&set);
 }
