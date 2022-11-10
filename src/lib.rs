@@ -8,11 +8,21 @@ use hashbrown::{
     raw::{RawIntoIter, RawIter},
 };
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct KeyedSet<T, Extractor, S = DefaultHashBuilder> {
     inner: hashbrown::raw::RawTable<T>,
     hash_builder: S,
     extractor: Extractor,
+}
+
+impl<T, Extractor: Default, S: Default> Default for KeyedSet<T, Extractor, S> {
+    fn default() -> Self {
+        Self {
+            inner: Default::default(),
+            hash_builder: Default::default(),
+            extractor: Default::default(),
+        }
+    }
 }
 
 impl<'a, T, Extractor, S> IntoIterator for &'a KeyedSet<T, Extractor, S> {
