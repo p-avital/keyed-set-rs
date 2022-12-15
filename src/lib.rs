@@ -180,6 +180,18 @@ where
         self.inner
             .get_mut(hash, |i| self.extractor.extract(i).eq(key))
     }
+
+    pub fn remove<K>(&mut self, key: &K) -> Option<T>
+    where
+        K: std::hash::Hash,
+        for<'z> <Extractor as KeyExtractor<'z, T>>::Key: std::hash::Hash + PartialEq<K>,
+    {
+        let mut hasher = self.hash_builder.build_hasher();
+        key.hash(&mut hasher);
+        let hash = hasher.finish();
+        self.inner
+            .remove_entry(hash, |i| self.extractor.extract(i).eq(key))
+    }
 }
 pub trait IEntry<T, Extractor, S, Borrower = DefaultBorrower>
 where
