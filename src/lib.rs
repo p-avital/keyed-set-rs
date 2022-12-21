@@ -5,7 +5,7 @@ use core::{
 
 use hashbrown::{
     hash_map::DefaultHashBuilder,
-    raw::{RawIntoIter, RawIter},
+    raw::{RawIntoIter, RawIter, RawTable},
 };
 
 #[derive(Clone)]
@@ -192,7 +192,69 @@ where
         self.inner
             .remove_entry(hash, |i| self.extractor.extract(i).eq(key))
     }
+    /// Returns an iterator that drains elements that match the provided predicate, while removing them from the set.
+    ///
+    /// Note that [`DrainFilter`] WILL iterate fully on drop, ensuring that all elements matching your predicate are always removed, even if you fail to iterate.
+    pub fn drain_where<F: FnMut(&mut T) -> bool>(&mut self, predicate: F) -> DrainFilter<T, F> {
+        DrainFilter {
+            predicate,
+            iter: unsafe { self.inner.iter() },
+            table: &mut self.inner,
+        }
+    }
+    /// Returns an iterator that drains elements from the collection, without affecting the collection's capacity.
+    ///
+    /// Note that [`Drain`] WILL iterate fully on drop, ensuring that all elements are indeed removed, even if you fail to iterate.
+    pub fn drain(&mut self) -> Drain<T> {
+        Drain {
+            iter: unsafe { self.inner.iter() },
+            table: &mut self.inner,
+        }
+    }
 }
+pub struct Drain<'a, T> {
+    iter: RawIter<T>,
+    table: &'a mut RawTable<T>,
+}
+
+impl<'a, T> Drop for Drain<'a, T> {
+    fn drop(&mut self) {
+        for _ in self {}
+    }
+}
+
+impl<'a, T> Iterator for Drain<'a, T> {
+    type Item = T;
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(unsafe { self.table.remove(self.iter.next()?) })
+    }
+}
+pub struct DrainFilter<'a, T, F: FnMut(&mut T) -> bool> {
+    predicate: F,
+    iter: RawIter<T>,
+    table: &'a mut RawTable<T>,
+}
+
+impl<'a, T, F: FnMut(&mut T) -> bool> Drop for DrainFilter<'a, T, F> {
+    fn drop(&mut self) {
+        for _ in self {}
+    }
+}
+
+impl<'a, T, F: FnMut(&mut T) -> bool> Iterator for DrainFilter<'a, T, F> {
+    type Item = T;
+    fn next(&mut self) -> Option<Self::Item> {
+        unsafe {
+            for item in &mut self.iter {
+                if (self.predicate)(item.as_mut()) {
+                    return Some(self.table.remove(item));
+                }
+            }
+        }
+        None
+    }
+}
+
 pub trait IEntry<T, Extractor, S, Borrower = DefaultBorrower>
 where
     Extractor: for<'a> KeyExtractor<'a, T>,
