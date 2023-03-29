@@ -1,3 +1,5 @@
+#![no_std]
+
 use core::{
     hash::{BuildHasher, Hash, Hasher},
     marker::PhantomData,
@@ -58,7 +60,7 @@ impl<'a, T: 'a + Hash> KeyExtractor<'a, T> for () {
 impl<T, Extractor> KeyedSet<T, Extractor>
 where
     Extractor: for<'a> KeyExtractor<'a, T>,
-    for<'a> <Extractor as KeyExtractor<'a, T>>::Key: std::hash::Hash,
+    for<'a> <Extractor as KeyExtractor<'a, T>>::Key: core::hash::Hash,
 {
     pub fn new(extractor: Extractor) -> Self {
         Self {
@@ -69,8 +71,8 @@ where
     }
 }
 
-impl<T: std::fmt::Debug, Extractor, S> std::fmt::Debug for KeyedSet<T, Extractor, S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: core::fmt::Debug, Extractor, S> core::fmt::Debug for KeyedSet<T, Extractor, S> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "KeyedSet {{")?;
         for v in self.iter() {
             write!(f, "{:?}, ", v)?;
@@ -82,7 +84,7 @@ impl<T: std::fmt::Debug, Extractor, S> std::fmt::Debug for KeyedSet<T, Extractor
 impl<T, Extractor, S> KeyedSet<T, Extractor, S>
 where
     Extractor: for<'a> KeyExtractor<'a, T>,
-    for<'a> <Extractor as KeyExtractor<'a, T>>::Key: std::hash::Hash,
+    for<'a> <Extractor as KeyExtractor<'a, T>>::Key: core::hash::Hash,
     S: BuildHasher,
 {
     pub fn insert(&mut self, value: T) -> Option<T>
@@ -112,8 +114,8 @@ where
     }
     pub fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, K, S>
     where
-        K: std::hash::Hash,
-        for<'z> <Extractor as KeyExtractor<'z, T>>::Key: std::hash::Hash + PartialEq<K>,
+        K: core::hash::Hash,
+        for<'z> <Extractor as KeyExtractor<'z, T>>::Key: core::hash::Hash + PartialEq<K>,
     {
         <Self as IEntry<T, Extractor, S, DefaultBorrower>>::entry(self, key)
     }
@@ -133,7 +135,7 @@ where
             Some(bucket) => {
                 core::mem::drop(key);
                 *bucket = value;
-                unsafe { std::mem::transmute(bucket) }
+                unsafe { core::mem::transmute(bucket) }
             }
             None => {
                 core::mem::drop(key);
@@ -145,8 +147,8 @@ where
     }
     pub fn get<K>(&self, key: &K) -> Option<&T>
     where
-        K: std::hash::Hash,
-        for<'a> <Extractor as KeyExtractor<'a, T>>::Key: std::hash::Hash + PartialEq<K>,
+        K: core::hash::Hash,
+        for<'a> <Extractor as KeyExtractor<'a, T>>::Key: core::hash::Hash + PartialEq<K>,
     {
         let mut hasher = self.hash_builder.build_hasher();
         key.hash(&mut hasher);
@@ -155,8 +157,8 @@ where
     }
     pub fn get_mut<'a, K>(&'a mut self, key: &'a K) -> Option<KeyedSetGuard<'a, K, T, Extractor>>
     where
-        K: std::hash::Hash,
-        for<'z> <Extractor as KeyExtractor<'z, T>>::Key: std::hash::Hash + PartialEq<K>,
+        K: core::hash::Hash,
+        for<'z> <Extractor as KeyExtractor<'z, T>>::Key: core::hash::Hash + PartialEq<K>,
     {
         let mut hasher = self.hash_builder.build_hasher();
         key.hash(&mut hasher);
@@ -171,8 +173,8 @@ where
     }
     pub fn get_mut_unguarded<'a, K>(&'a mut self, key: &K) -> Option<&'a mut T>
     where
-        K: std::hash::Hash,
-        for<'z> <Extractor as KeyExtractor<'z, T>>::Key: std::hash::Hash + PartialEq<K>,
+        K: core::hash::Hash,
+        for<'z> <Extractor as KeyExtractor<'z, T>>::Key: core::hash::Hash + PartialEq<K>,
     {
         let mut hasher = self.hash_builder.build_hasher();
         key.hash(&mut hasher);
@@ -183,8 +185,8 @@ where
 
     pub fn remove<K>(&mut self, key: &K) -> Option<T>
     where
-        K: std::hash::Hash,
-        for<'z> <Extractor as KeyExtractor<'z, T>>::Key: std::hash::Hash + PartialEq<K>,
+        K: core::hash::Hash,
+        for<'z> <Extractor as KeyExtractor<'z, T>>::Key: core::hash::Hash + PartialEq<K>,
     {
         let mut hasher = self.hash_builder.build_hasher();
         key.hash(&mut hasher);
@@ -258,31 +260,31 @@ impl<'a, T, F: FnMut(&mut T) -> bool> Iterator for DrainFilter<'a, T, F> {
 pub trait IEntry<T, Extractor, S, Borrower = DefaultBorrower>
 where
     Extractor: for<'a> KeyExtractor<'a, T>,
-    for<'a> <Extractor as KeyExtractor<'a, T>>::Key: std::hash::Hash,
+    for<'a> <Extractor as KeyExtractor<'a, T>>::Key: core::hash::Hash,
     S: BuildHasher,
 {
     fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, K, S>
     where
         Borrower: IBorrower<K>,
-        <Borrower as IBorrower<K>>::Borrowed: std::hash::Hash,
+        <Borrower as IBorrower<K>>::Borrowed: core::hash::Hash,
         for<'z> <Extractor as KeyExtractor<'z, T>>::Key:
-            std::hash::Hash + PartialEq<<Borrower as IBorrower<K>>::Borrowed>;
+            core::hash::Hash + PartialEq<<Borrower as IBorrower<K>>::Borrowed>;
 }
 impl<T, Extractor, S, Borrower> IEntry<T, Extractor, S, Borrower> for KeyedSet<T, Extractor, S>
 where
     Extractor: for<'a> KeyExtractor<'a, T>,
-    for<'a> <Extractor as KeyExtractor<'a, T>>::Key: std::hash::Hash,
+    for<'a> <Extractor as KeyExtractor<'a, T>>::Key: core::hash::Hash,
     S: BuildHasher,
 {
     fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, K, S>
     where
         Borrower: IBorrower<K>,
-        <Borrower as IBorrower<K>>::Borrowed: std::hash::Hash,
+        <Borrower as IBorrower<K>>::Borrowed: core::hash::Hash,
         for<'z> <Extractor as KeyExtractor<'z, T>>::Key:
-            std::hash::Hash + PartialEq<<Borrower as IBorrower<K>>::Borrowed>,
+            core::hash::Hash + PartialEq<<Borrower as IBorrower<K>>::Borrowed>,
     {
         match self.get_mut_unguarded(Borrower::borrow(&key)) {
-            Some(entry) => Entry::OccupiedEntry(unsafe { std::mem::transmute(entry) }),
+            Some(entry) => Entry::OccupiedEntry(unsafe { core::mem::transmute(entry) }),
             None => Entry::Vacant(VacantEntry { set: self, key }),
         }
     }
@@ -323,16 +325,16 @@ impl<T, Extractor, S> KeyedSet<T, Extractor, S> {
 pub struct KeyedSetGuard<'a, K, T, Extractor>
 where
     Extractor: for<'z> KeyExtractor<'z, T>,
-    for<'z> <Extractor as KeyExtractor<'z, T>>::Key: std::hash::Hash + PartialEq<K>,
+    for<'z> <Extractor as KeyExtractor<'z, T>>::Key: core::hash::Hash + PartialEq<K>,
 {
     guarded: &'a mut T,
     key: &'a K,
     extractor: &'a Extractor,
 }
-impl<'a, K, T, Extractor> std::ops::Deref for KeyedSetGuard<'a, K, T, Extractor>
+impl<'a, K, T, Extractor> core::ops::Deref for KeyedSetGuard<'a, K, T, Extractor>
 where
     Extractor: for<'z> KeyExtractor<'z, T>,
-    for<'z> <Extractor as KeyExtractor<'z, T>>::Key: std::hash::Hash + PartialEq<K>,
+    for<'z> <Extractor as KeyExtractor<'z, T>>::Key: core::hash::Hash + PartialEq<K>,
 {
     type Target = T;
 
@@ -340,10 +342,10 @@ where
         self.guarded
     }
 }
-impl<'a, K, T, Extractor> std::ops::DerefMut for KeyedSetGuard<'a, K, T, Extractor>
+impl<'a, K, T, Extractor> core::ops::DerefMut for KeyedSetGuard<'a, K, T, Extractor>
 where
     Extractor: for<'z> KeyExtractor<'z, T>,
-    for<'z> <Extractor as KeyExtractor<'z, T>>::Key: std::hash::Hash + PartialEq<K>,
+    for<'z> <Extractor as KeyExtractor<'z, T>>::Key: core::hash::Hash + PartialEq<K>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.guarded
@@ -352,7 +354,7 @@ where
 impl<'a, K, T, Extractor> Drop for KeyedSetGuard<'a, K, T, Extractor>
 where
     Extractor: for<'z> KeyExtractor<'z, T>,
-    for<'z> <Extractor as KeyExtractor<'z, T>>::Key: std::hash::Hash + PartialEq<K>,
+    for<'z> <Extractor as KeyExtractor<'z, T>>::Key: core::hash::Hash + PartialEq<K>,
 {
     fn drop(&mut self) {
         if !self.extractor.extract(&*self.guarded).eq(self.key) {
@@ -453,7 +455,7 @@ fn make_hasher<'a, S: BuildHasher, Extractor, T>(
 ) -> impl Fn(&T) -> u64 + 'a
 where
     Extractor: for<'b> KeyExtractor<'b, T>,
-    for<'b> <Extractor as KeyExtractor<'b, T>>::Key: std::hash::Hash,
+    for<'b> <Extractor as KeyExtractor<'b, T>>::Key: core::hash::Hash,
 {
     move |value| {
         let key = extractor.extract(value);
@@ -473,5 +475,4 @@ fn test() {
     assert_eq!(set.get(&0), Some(&(0, 1)));
     assert!(set.get(&1).is_none());
     assert_eq!(*set.entry(12).get_or_insert_with(|k| (k, k)), (12, 12));
-    dbg!(&set);
 }

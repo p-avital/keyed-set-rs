@@ -1,6 +1,6 @@
 [package]
 name = "keyed-set"
-version = "0.4.4"
+version = "0.4.5"
 edition = "2021"
 authors = ["Pierre Avital <pierre.avital@me.com>"]
 description = "Keyed Set: a hashbrown-based HashSet that indexes based on projections of its elements."
