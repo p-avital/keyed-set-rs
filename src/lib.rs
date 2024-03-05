@@ -252,7 +252,7 @@ impl<'a, T> Drop for Drain<'a, T> {
 impl<'a, T> Iterator for Drain<'a, T> {
     type Item = T;
     fn next(&mut self) -> Option<Self::Item> {
-        Some(unsafe { self.table.remove(self.iter.next()?) })
+        Some(unsafe { self.table.remove(self.iter.next()?).0 })
     }
 }
 /// An iterator over a [`KeyedSet`] that only steals values that match a given predicate.
@@ -274,7 +274,7 @@ impl<'a, T, F: FnMut(&mut T) -> bool> Iterator for DrainFilter<'a, T, F> {
         unsafe {
             for item in &mut self.iter {
                 if (self.predicate)(item.as_mut()) {
-                    return Some(self.table.remove(item));
+                    return Some(self.table.remove(item).0);
                 }
             }
         }

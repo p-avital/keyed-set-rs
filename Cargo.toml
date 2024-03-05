@@ -1,6 +1,6 @@
 [package]
 name = "keyed-set"
-version = "0.4.5"
+version = "1.0.0"
 edition = "2021"
 authors = ["Pierre Avital <pierre.avital@me.com>"]
 description = "Keyed Set: a hashbrown-based HashSet that indexes based on projections of its elements."
@@ -13,7 +13,7 @@ categories = ["data-structures"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hashbrown = { version = "0.13.1", features = ["raw"] }
+hashbrown = { version = "0.14.3", features = ["raw"] }
 
 [lints.rust]
 missing_docs = "warn"
