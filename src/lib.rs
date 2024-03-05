@@ -1,3 +1,9 @@
+//! # Keyed Set: a hashbrown-based HashSet that indexes based on projections of its elements.
+//! Ever wanted a `HashMap<K, V>`, but where `V` actually contains `K` (or at least can be projected to it)?
+//! Well this is it.
+//!
+//! The easiest way to define a projection is through a closure that you pass at construction, but you may also define your own key extractors as ZSTs that implement `Default` to gain a `Default` constructor for your Keyed Sets.
+
 #![no_std]
 
 use core::{
@@ -10,6 +16,7 @@ use hashbrown::{
     raw::{RawIntoIter, RawIter, RawTable},
 };
 
+/// A `HashMap<K, V>` where `K` is a part of `V`
 #[derive(Clone)]
 pub struct KeyedSet<T, Extractor, S = DefaultHashBuilder> {
     inner: hashbrown::raw::RawTable<T>,
@@ -41,8 +48,11 @@ impl<'a, T, Extractor, S> IntoIterator for &'a mut KeyedSet<T, Extractor, S> {
         self.iter_mut()
     }
 }
+/// Extracts the key from the value, allowing [`KeyedSet`] to obtain its values' keys.
 pub trait KeyExtractor<'a, T> {
+    /// The type of the key extracted by the extractor.
     type Key: Hash;
+    /// Extracts the key from the value, allowing [`KeyedSet`] to obtain its values' keys.
     fn extract(&self, from: &'a T) -> Self::Key;
 }
 impl<'a, T: 'a, U: Hash, F: Fn(&'a T) -> U> KeyExtractor<'a, T> for F {
@@ -62,6 +72,7 @@ where
     Extractor: for<'a> KeyExtractor<'a, T>,
     for<'a> <Extractor as KeyExtractor<'a, T>>::Key: core::hash::Hash,
 {
+    /// Construct a new map where the key is extracted from the value using `extractor`.`
     pub fn new(extractor: Extractor) -> Self {
         Self {
             inner: Default::default(),
@@ -81,12 +92,14 @@ impl<T: core::fmt::Debug, Extractor, S> core::fmt::Debug for KeyedSet<T, Extract
     }
 }
 
+#[allow(clippy::manual_hash_one)]
 impl<T, Extractor, S> KeyedSet<T, Extractor, S>
 where
     Extractor: for<'a> KeyExtractor<'a, T>,
     for<'a> <Extractor as KeyExtractor<'a, T>>::Key: core::hash::Hash,
     S: BuildHasher,
 {
+    /// Inserts a value into the map.
     pub fn insert(&mut self, value: T) -> Option<T>
     where
         for<'a, 'b> <Extractor as KeyExtractor<'a, T>>::Key:
@@ -112,6 +125,7 @@ where
             }
         }
     }
+    /// Obtain an entry in the map, allowing mutable access to the value associated to that key if it exists.
     pub fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, K, S>
     where
         K: core::hash::Hash,
@@ -119,6 +133,7 @@ where
     {
         <Self as IEntry<T, Extractor, S, DefaultBorrower>>::entry(self, key)
     }
+    /// Similar to [`KeyedSet::insert`], but returns a mutable reference to the inserted value instead of the previous value.
     pub fn write(&mut self, value: T) -> &mut T
     where
         for<'a, 'b> <Extractor as KeyExtractor<'a, T>>::Key:
@@ -145,6 +160,7 @@ where
             }
         }
     }
+    /// Access the value associated to the key immutably.
     pub fn get<K>(&self, key: &K) -> Option<&T>
     where
         K: core::hash::Hash,
@@ -155,6 +171,9 @@ where
         let hash = hasher.finish();
         self.inner.get(hash, |i| self.extractor.extract(i).eq(key))
     }
+    /// Access the value associated to the key mutably.
+    ///
+    /// The returned [`KeyedSetGuard`] will panic on drop if the value is modified in a way that modifies its key.
     pub fn get_mut<'a, K>(&'a mut self, key: &'a K) -> Option<KeyedSetGuard<'a, K, T, Extractor>>
     where
         K: core::hash::Hash,
@@ -171,7 +190,11 @@ where
                 extractor: &self.extractor,
             })
     }
-    pub fn get_mut_unguarded<'a, K>(&'a mut self, key: &K) -> Option<&'a mut T>
+    /// Access the value associated to the key mutably.
+    ///
+    /// # Safety
+    /// Mutating the value in a way that mutates its key may lead to undefined behaviour.
+    pub unsafe fn get_mut_unguarded<'a, K>(&'a mut self, key: &K) -> Option<&'a mut T>
     where
         K: core::hash::Hash,
         for<'z> <Extractor as KeyExtractor<'z, T>>::Key: core::hash::Hash + PartialEq<K>,
@@ -182,7 +205,7 @@ where
         self.inner
             .get_mut(hash, |i| self.extractor.extract(i).eq(key))
     }
-
+    /// Remove the value associated to the key, returning it if it exists.
     pub fn remove<K>(&mut self, key: &K) -> Option<T>
     where
         K: core::hash::Hash,
@@ -214,6 +237,7 @@ where
         }
     }
 }
+/// An iterator over a [`KeyedSet`] that steals the values from it.
 pub struct Drain<'a, T> {
     iter: RawIter<T>,
     table: &'a mut RawTable<T>,
@@ -231,6 +255,7 @@ impl<'a, T> Iterator for Drain<'a, T> {
         Some(unsafe { self.table.remove(self.iter.next()?) })
     }
 }
+/// An iterator over a [`KeyedSet`] that only steals values that match a given predicate.
 pub struct DrainFilter<'a, T, F: FnMut(&mut T) -> bool> {
     predicate: F,
     iter: RawIter<T>,
@@ -256,13 +281,14 @@ impl<'a, T, F: FnMut(&mut T) -> bool> Iterator for DrainFilter<'a, T, F> {
         None
     }
 }
-
+/// The trait magic that allows [`KeyedSet::entry`] to work.
 pub trait IEntry<T, Extractor, S, Borrower = DefaultBorrower>
 where
     Extractor: for<'a> KeyExtractor<'a, T>,
     for<'a> <Extractor as KeyExtractor<'a, T>>::Key: core::hash::Hash,
     S: BuildHasher,
 {
+    /// Access the entry for `key`.
     fn entry<'a, K>(&'a mut self, key: K) -> Entry<'a, T, Extractor, K, S>
     where
         Borrower: IBorrower<K>,
@@ -283,15 +309,19 @@ where
         for<'z> <Extractor as KeyExtractor<'z, T>>::Key:
             core::hash::Hash + PartialEq<<Borrower as IBorrower<K>>::Borrowed>,
     {
-        match self.get_mut_unguarded(Borrower::borrow(&key)) {
+        match unsafe { self.get_mut_unguarded(Borrower::borrow(&key)) } {
             Some(entry) => Entry::OccupiedEntry(unsafe { core::mem::transmute(entry) }),
             None => Entry::Vacant(VacantEntry { set: self, key }),
         }
     }
 }
+/// The default way to borrow a value.
 pub struct DefaultBorrower;
+/// Allows defining alternatives to [`core::ops::Deref`]
 pub trait IBorrower<T> {
+    /// The borrow target.
     type Borrowed;
+    /// Borrows a value in its borrowed representation.
     fn borrow(value: &T) -> &Self::Borrowed;
 }
 impl<T> IBorrower<T> for DefaultBorrower {
@@ -302,26 +332,30 @@ impl<T> IBorrower<T> for DefaultBorrower {
     }
 }
 impl<T, Extractor, S> KeyedSet<T, Extractor, S> {
+    /// Iterate over the [`KeyedSet`]'s values immutably.
     pub fn iter(&self) -> Iter<T> {
         Iter {
             inner: unsafe { self.inner.iter() },
             marker: PhantomData,
         }
     }
+    /// Iterate over the [`KeyedSet`]'s values mutably.
     pub fn iter_mut(&mut self) -> IterMut<T> {
         IterMut {
             inner: unsafe { self.inner.iter() },
             marker: PhantomData,
         }
     }
+    /// Returns the number of elements in the [`KeyedSet`]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
+    /// Returns `true` if the [`KeyedSet`] is empty.
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 }
-
+/// A guard that allows mutating a value, but which panics if the new value once dropped doesn't have the same key.
 pub struct KeyedSetGuard<'a, K, T, Extractor>
 where
     Extractor: for<'z> KeyExtractor<'z, T>,
@@ -363,6 +397,7 @@ where
     }
 }
 
+/// An iterator over the [`KeyedSet`] by value.
 pub struct IntoIter<T>(RawIntoIter<T>);
 
 impl<T> ExactSizeIterator for IntoIter<T> {
@@ -377,6 +412,7 @@ impl<T> Iterator for IntoIter<T> {
     }
 }
 
+/// An iterator over the [`KeyedSet`] by reference.
 pub struct Iter<'a, T> {
     inner: RawIter<T>,
     marker: PhantomData<&'a ()>,
@@ -392,6 +428,7 @@ impl<'a, T: 'a> ExactSizeIterator for Iter<'a, T> {
         self.inner.len()
     }
 }
+/// An iterator over the [`KeyedSet`] by mutable reference.
 pub struct IterMut<'a, T> {
     inner: RawIter<T>,
     marker: PhantomData<&'a mut ()>,
@@ -408,12 +445,18 @@ impl<'a, T: 'a> ExactSizeIterator for IterMut<'a, T> {
     }
 }
 
+/// A vacant entry into a [`KeyedSet`]
 pub struct VacantEntry<'a, T: 'a, Extractor, K, S> {
+    /// The inner set
     pub set: &'a mut KeyedSet<T, Extractor, S>,
+    /// The key fort he entry.
     pub key: K,
 }
+/// An entry into a [`KeyedSet`], allowing in-place modification of the value associated with the key if it exists.
 pub enum Entry<'a, T, Extractor, K, S = DefaultHashBuilder> {
+    /// The key was not yet present in the [`KeyedSet`].
     Vacant(VacantEntry<'a, T, Extractor, K, S>),
+    /// The key was already present in the [`KeyedSet`].
     OccupiedEntry(&'a mut T),
 }
 
@@ -424,12 +467,14 @@ where
     for<'z, 'b> <Extractor as KeyExtractor<'z, T>>::Key:
         PartialEq<<Extractor as KeyExtractor<'b, T>>::Key>,
 {
+    /// Get a mutable reference to the value if present, or assign a value constructed by `f` if it wasn't.
     pub fn get_or_insert_with(self, f: impl FnOnce(K) -> T) -> &'a mut T {
         match self {
             Entry::Vacant(entry) => entry.insert_with(f),
             Entry::OccupiedEntry(entry) => entry,
         }
     }
+    /// A shortcut for `entry.get_or_insert_with(Into::into)`
     pub fn get_or_insert_with_into(self) -> &'a mut T
     where
         K: Into<T>,
@@ -444,11 +489,13 @@ where
     for<'z, 'b> <Extractor as KeyExtractor<'z, T>>::Key:
         PartialEq<<Extractor as KeyExtractor<'b, T>>::Key>,
 {
+    /// Inserts a value constructed from the entry's key using `f`.
     pub fn insert_with<F: FnOnce(K) -> T>(self, f: F) -> &'a mut T {
         self.set.write(f(self.key))
     }
 }
 
+#[allow(clippy::manual_hash_one)]
 fn make_hasher<'a, S: BuildHasher, Extractor, T>(
     hash_builder: &'a S,
     extractor: &'a Extractor,

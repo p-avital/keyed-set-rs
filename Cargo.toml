@@ -14,3 +14,13 @@ categories = ["data-structures"]
 
 [dependencies]
 hashbrown = { version = "0.13.1", features = ["raw"] }
+
+[lints.rust]
+missing_docs = "warn"
+
+[lints.clippy]
+missing_panics_doc = "warn"
+missing_const_for_fn = "warn"
+missing_safety_doc = "warn"
+missing_errors_doc = "warn"
+nurser = "warn"
